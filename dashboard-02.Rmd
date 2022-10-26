@@ -1,0 +1,541 @@
+---
+title: "Fisheries and climate change"
+resource_files:
+- "shp/MPA_MX_v1.0_01032021/MPA_MX_c1-0.shx" 
+- "shp/MPA_MX_v1.0_01032021/MPA_MX_c1-0.prj" 
+- "shp/MPA_MX_v1.0_01032021/MPA_MX_c1-0.dbf" 
+output: 
+  flexdashboard::flex_dashboard: 
+    orientation: row
+    vertical_layout: fill
+    navbar:
+      - { title: "GitHub", href: "https://github.com/CBMC-GCMP/dafishr", align: right, icon: "fa-github" }
+    theme: 
+      version: 4
+      bg: "#121212"
+      fg: "#FFFFFF" 
+      primary: "#b3b3b3"
+      navbar-bg: "#03DAC5"
+      base_font: 
+        google: Prompt
+      heading_font:
+        google: Sen
+      code_font:
+        google: 
+          # arguments to sass::font_google() 
+          family: JetBrains Mono
+          local: false
+    source_code: embed 
+    runtime: shiny 
+    
+
+    
+---
+
+About {data-icon="fa-info" data-orientation=rows} 
+=======================================================================
+
+
+
+### Goals
+
+This project aims to inform the fishing industry on how climate change can affect their catches.
+
+### 
+Through a series of Machine Learning models we can predict the fishery yields under distinct climate change scenarios.
+
+### 
+Fishing and climate scenario datasets would help us build and improve this interactive dashboard, so any user could visualize the map of fishing yields or obtain certain fishing statistics.
+
+
+
+Modeled variables {data-icon="fa-globe" data-navmenu="Menu"}
+=======================================================================
+        
+```{r setup, include=FALSE, results='hide'}
+
+library(flexdashboard)
+library(leaflet)
+library(mapview)
+library(rgdal)
+library(sf)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(raster)
+library(shiny)
+library(openair)
+library(shinythemes)
+library(ggplot2)
+library(rmarkdown)
+library(RColorBrewer)
+library(janitor)
+
+
+# Loading forecast and heatwaves data ----------------
+phw_slope <- raster::raster("data/rasters/heatwaves/raster_pacific_slope.tif")
+
+phw_p <- raster::raster("data/rasters/heatwaves/raster_pacific_p.tif")
+
+p_sst <- raster::raster("data/rasters/heatwaves/pacific_mean_SST.tif")
+
+yield_p <- raster("data/rasters/average_yield_P.tif")
+
+
+fh <- raster("data/rasters/fishing_hours_sum_2018_2021.tiff")
+crs(fh) <- sp::CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+
+# Loading MPA layer -------------------
+mpa <- raster::shapefile("shp/MPA_MX_v1.0_01032021/MPA_MX_c1-0.shp", encoding = "UTF-8", verbose = FALSE)
+
+
+# Loading fisheries predictions ----------------
+
+# t_albacares <- raster("data/rasters/mean_MCP/Thunnus_albacares_avg_MCP.tif")
+# t_atlanticus <- raster("data/rasters/mean_MCP/Thunnus_atlanticus_avg_MCP.tif")
+# t_obesus <- raster("data/rasters/mean_MCP/Thunnus_obesus_avg_MCP.tif")
+# t_orientalis <- raster("data/rasters/mean_MCP/Thunnus_orientalis_avg_MCP.tif")
+# t_thynnus <- raster("data/rasters/mean_MCP/Thunnus_thynnus_avg_MCP.tif")
+
+
+```
+
+
+
+```{r}
+
+
+# # Sea Surface Temperature Labels
+# sst_df <- as.data.frame(p_sst, xy=T) %>% 
+#   filter(!is.na(pacific_mean_SST)) %>% 
+#   # st_as_sf(., coords=c("x", "y"), crs=4326) %>% 
+#   rename(value=pacific_mean_SST) %>% 
+#            mutate(variable="SST")
+# 
+# 
+# 
+# # Marine Heatwaves Labels
+# mhw_df <- as.data.frame(phw_slope, xy=T) %>% 
+#   filter(!is.na(raster_pacific_slope)) %>% 
+#   # st_as_sf(., coords=c("x", "y"), crs=4326) %>% 
+#   rename(value=raster_pacific_slope) %>% 
+#   mutate(variable="mhw")
+# 
+# 
+# # Fishing hours Labels
+# fh_df <- as.data.frame(fh, xy=T) %>% 
+#   filter(!is.na(fishing_hours_sum_2018_2021)) %>% 
+#   # st_as_sf(., coords=c("x", "y"), crs=4326) %>% 
+#   rename(value=fishing_hours_sum_2018_2021) %>% 
+#   mutate(variable="fh")
+# 
+# 
+# 
+# raster_values <- rbind(sst_df, mhw_df, fh_df)
+
+# Sea Surface Temperature Labels
+# sst_df$labels1 <- paste0(
+#                       "<b style= 'color:#263270'> Value: </b> ", sst_df$value, "<br/> ") %>%
+#         lapply(htmltools::HTML)
+# 
+# # Marine Heatwaves Labels
+# raster_values$labels2 <- paste0("<h3 style= 'background-color:#3d0e27; color: white; text-align: center; font-size: 150%; font-family:Times New Roman'> Pixel Value </h3>",
+#                       "<b style= 'color:#263270'> Slope value: </b> ", raster_values$value, "<br/> ") %>%
+#         lapply(htmltools::HTML)
+# 
+# 
+# # MPA labels
+# mpa$labels3 <- paste0("<h3 style= 'background-color:#3a875a; color: white; text-align: center; font-size: 150%; font-family:Times New Roman'> Marine Protected Area </h3>", 
+#                       "<b style= 'color:#263270'> Name: </b> ", mpa$ANP, "<br/> ",
+#                       "<b style= 'color:#263270'>Management Plan: </b> ", "<a href =\"", mpa$PM_link, "\", target=\"_blank\"> PDF </a>" ,   "<br/> ",
+#                       "<b style= 'color:#263270'>Date: </b> ", mpa$FECHA, "<br/> ",
+#                       "<b style= 'color:#263270'> Zone: </b> ", mpa$Categor, "<br/> ",
+#                       "<b style= 'color:#263270'> Subzone: </b> ", mpa$Subznfc, "<br/> ",
+#                       "<b style= 'color:#263270'> Diving site: </b> ", mpa$Buceo, "<br/> ",
+#                       "<b style= 'color:#263270'> Fishing site: </b> ", mpa$Pesca, "<br/> ") %>%
+#         lapply(htmltools::HTML)
+# 
+# # Fishing hours Labels
+# raster_values$labels4 <- paste0("<h3 style= 'background-color:#3d0e27; color: white; text-align: center; font-size: 150%; font-family:Times New Roman'> Pixel Value </h3>",
+#                       "<b style= 'color:#263270'> Hours: </b> ", raster_values$value, "<br/> ") %>%
+#         lapply(htmltools::HTML)
+
+
+
+
+heat <- colorNumeric(c("#0c2c84" , "#ffffff", "#850c0c" ), values(phw_slope),
+                    na.color = "transparent")
+
+sst <- colorNumeric(c("#1000c2" ,  "orange", "red" ), values(p_sst),
+                    na.color = "transparent")
+
+# t <- colorNumeric(c("#47e0ff", "orange", "red"), values(t_obesus), na.color = "transparent")
+
+h <- colorNumeric(c("darkblue", "orange", "red"), values(fh), na.color = "transparent")
+
+# p <- colorNumeric(c("#000000" , "#808080", "#e3e3e3"), values(phw_p), na.color = "transparent")
+
+yield_bins <- c(0.464, 0.470, 0.475, 0.480, 0.485, 0.490, 0.495 )
+
+yield_pal <- colorBin(c("#1c164d", "#e0c200", "#038a0a"), bins=yield_bins)
+
+
+leaflet() %>%
+        # addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+  addProviderTiles(providers$Esri.OceanBasemap, group = "Océano") %>%
+  addRasterImage(fh, colors=h, opacity = 1, layerId = 3, group="Fishing hours 2021") %>%
+  addRasterImage(phw_slope, colors=heat , opacity = 0.8, layerId = 1, group="Marine HWs Slope") %>%
+  addRasterImage(p_sst, colors= sst, opacity = 1, layerId = 1, group="SST") %>%
+  addRasterImage(yield_p, colors= yield_pal, opacity = 1, layerId = 1, group="Yield Probability") %>%
+  # 
+  # addCircleMarkers(data=
+  # 
+  
+  # 
+  # addCircleMarkers(~x, ~y,
+  #   popup = ~labels1, color="white", fillColor = 0, stroke = FALSE, fillOpacity = 0, group="SST") %>%
+  # addCircleMarkers(lat=subset(raster_values, variable=="mhw")$y, lng=subset(raster_values, variable=="mhw")$x,
+  #   popup = ~labels2, color="white", fillColor = 0, stroke = FALSE, fillOpacity = 0,group="Marine HWs Slope") %>%
+  # addCircleMarkers(lat=subset(raster_values, variable=="fh")$y, lng=subset(raster_values, variable=="fh")$x,
+  #   popup = ~labels4, color="white", fillColor = 0, stroke = FALSE, fillOpacity = 0,group="Fishing hours 2021") %>%
+  # addRasterImage(phw_p, colors=p , opacity = 1, layerId = 1, group="Marine HWs P-values") %>%
+  # addRasterImage(t_obesus, colors=t , opacity = 0.8, layerId = 1, group="MCP <i>Thunnus obesus</i> ") %>%
+  
+        #   addPolygons(
+        #         data = mpa,
+        #         group = "MPA",
+        #         weight = 2,
+        #         opacity = 1,
+        # 
+        #         fillColor = "magma",
+        #         fillOpacity = 0.3,
+        #         color = "green",
+        #         dashArray = "2",
+        #         highlightOptions = highlightOptions(
+        #                 color = "#73d7ff",
+        #                 weight = 2,
+        #                 bringToFront = TRUE
+        #         )
+        #        , popup = ~ labels3,
+        # ) %>%
+
+  
+  
+
+  addLegend(pal=heat, values=values(phw_slope), title="Marine Heatwaves", group="Marine HWs Slope" ) %>%
+  addLegend(pal=sst, values=values(p_sst), title="Sea Surface Temperature", position="bottomleft", group="SST" ) %>%
+  # addLegend(pal=t, values=values(t_obesus), title="MCP", position="bottomright" ) %>%
+  addLegend(pal=h, values=values(fh), title="Fishing Hours", position="topleft", group="Fishing hours 2021" ) %>%
+    addLegend(pal=yield_pal, values=values(yield_p), title=" Average Yield Probability (2021-2030)", position="topleft", group="Yield Probability" ) %>%
+  # addLegend(pal=p, values=values(phw_p), title="P-values", position = "bottomright") %>%
+  
+
+    
+  
+  
+        addLayersControl(
+                
+                overlayGroups = c(
+                                  "SST",
+                                  "Marine HWs Slope",
+                                  # "Marine HWs P-values",
+                                  # '<p style="font-style: italic;">  <font size="-1">Thunnus albacares</font> </p>MCP', 
+                                  "Fishing hours 2021",
+                                  "Yield Probability"
+                                  # ,"MCP <i>Thunnus obesus</i> "
+                                  # ,"MPA"
+                                  ),
+                options = layersControlOptions(collapsed = TRUE)
+        ) %>%
+          hideGroup(c("Marine HWs Slope","Fishing hours 2021" , "Yield Probability"
+                      # ,"MCP <i>Thunnus obesus</i> "
+                      # ,"Marine HWs P-values"
+                      # , '<p style="font-style: italic;">  <font size="-1">Thunnus albacares</font> </p>MCP'
+                      )) %>%
+        
+        setView(lng = -118,
+                lat = 22,
+                zoom = 5) 
+```
+
+Forecast {data-icon="fa-chart-line" data-navmenu="Menu"}
+=======================================================================
+
+```{r echo=FALSE, results= 'hide'}
+
+#Load fisheries forecasts (hrs)
+
+## Tuna
+Tuna <- read.csv("data/fishing_hours_forecast/forecast_tuna.csv") %>%
+  mutate(effort_catch= effort_catch)
+Tuna$date <- as.Date(Tuna$date)
+
+Sardine <- read.csv("data/fishing_hours_forecast/forecast_sardine.csv")%>%
+  mutate(effort_catch= effort_catch/1500)
+Sardine$date <- as.Date(Sardine$date)
+
+Shark <- read.csv("data/fishing_hours_forecast/forecast_sharks.csv")%>%
+  mutate(effort_catch= effort_catch/1500)
+Shark$date <- as.Date(Shark$date)
+
+Shrimp <- read.csv("data/fishing_hours_forecast/forecast_tuna.csv")%>%
+  mutate(effort_catch= effort_catch/1500)
+Shrimp$date <- as.Date(Shrimp$date)
+
+Forecast <- read.csv("data/forecasts.csv")%>%
+  mutate(effort_catch= effort_catch/1500)
+Forecast$date <- as.Date(Forecast$date)
+
+```
+
+Column {.sidebar}
+-------------------------------------
+
+<font size="+2"> Please specify type of fishery and period of time </font>
+
+<br/>
+<br/>
+<br/>
+<br/>
+<br/>
+
+```{r}
+
+
+## Column {.sidebar key =" value, one per line"}
+
+selectInput("fishery", label = strong("Fishery:"),
+            choices = c("Tuna", "Shark", "Shrimp", "Sardine", "Forecast"), selected = "Tuna")
+
+
+dateRangeInput("date", strong("Date range:"),
+               start = "2021-12-31",
+               end = "2050-12-31",
+               min = "2021-12-31",
+               max = "2100-12-31")
+
+# sliderInput("date", label = "Date:",
+#             min = "2021-12-31", max = "2100-12-31", value = 1, step = 0.2)
+
+
+
+
+```
+
+
+Column {}
+-------------------------------------
+
+###  <font size="+6"> Fishing hours </font>  
+
+```{r echo=FALSE}
+renderPlot({
+if(input$fishery=="Tuna"){
+
+
+  Tuna %>%
+    filter(
+
+           date >= as.Date(input$date[1]),
+           date <= as.Date(input$date[2])) %>%
+    ggplot(aes(x = date, y = effort_catch
+               # , color = Users
+               )) +
+    geom_line(size = 1, alpha=0.8, col="#f7cb72") +
+    # geom_smooth( method = "gam", methods.arg = list(family = Gamma(log)), fill="#3700B3",color="#03DAC6"
+    #              )+
+
+    labs(x = "Date", y = "Fishing hours", title=paste0(input$fishery," fisheries from ", format(input$date[1], format="%Y"), " to ", format(input$date[2], format="%Y") )) +
+    theme_classic()+
+    theme(axis.text.y = element_text(size=18, colour ="#FFFFFF" ),
+          axis.text.x = element_text(size=17, colour ="#FFFFFF" ),
+          axis.title.y = element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          axis.title.x= element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          plot.title = element_text(size=22, face="bold", hjust=0.5, colour ="#FFFFFF" ),
+          plot.background = element_rect(fill="#121212"),
+          panel.background = element_rect(fill="#121212"),
+          axis.line = element_line(colour = "#FFFFFF"))
+
+
+} else if(input$fishery=="Shark"){
+
+    Shark %>%
+    filter(
+
+           date >= as.Date(input$date[1]),
+           date <= as.Date(input$date[2])) %>%
+    ggplot(aes(x = date, y = effort_catch
+               # , color = Users
+               )) +
+    geom_line(size = 1, alpha=0.8, col="#f7cb72") +
+    # geom_smooth( method = "gam", methods.arg = list(family = Gamma(log)), fill="#3700B3",color="#03DAC6"
+    #              )+
+    labs(x = "Date", y = "Fishing hours", title=paste0(input$fishery," fisheries from ", format(input$date[1], format="%Y"), " to ", format(input$date[2], format="%Y") )) +
+    theme_classic()+
+    theme(axis.text.y = element_text(size=18, colour ="#FFFFFF" ),
+          axis.text.x = element_text(size=17, colour ="#FFFFFF" ),
+          axis.title.y = element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          axis.title.x= element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          plot.title = element_text(size=22, face="bold", hjust=0.5, colour ="#FFFFFF" ),
+          plot.background = element_rect(fill="#121212"),
+          panel.background = element_rect(fill="#121212"),
+          axis.line = element_line(colour = "#FFFFFF"))
+
+} else if(input$fishery=="Shrimp"){
+
+  Shrimp %>%
+    filter(
+
+           date >= as.Date(input$date[1]),
+           date <= as.Date(input$date[2])) %>%
+    ggplot(aes(x = date, y = effort_catch
+               # , color = Users
+               )) +
+    geom_line(size = 1, alpha=0.8, col="#f7cb72") +
+    # geom_smooth( method = "gam", methods.arg = list(family = Gamma(log)), fill="#3700B3",color="#03DAC6"
+    #              )+
+    labs(x = "Date", y = "Fishing hours",  title=paste0(input$fishery," fisheries from ", format(input$date[1], format="%Y"), " to ", format(input$date[2], format="%Y") )) +
+    theme_classic()+
+    theme(axis.text.y = element_text(size=18, colour ="#FFFFFF" ),
+          axis.text.x = element_text(size=17, colour ="#FFFFFF" ),
+          axis.title.y = element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          axis.title.x= element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          plot.title = element_text(size=22, face="bold", hjust=0.5, colour ="#FFFFFF" ),
+          plot.background = element_rect(fill="#121212"),
+          panel.background = element_rect(fill="#121212"),
+          axis.line = element_line(colour = "#FFFFFF"))
+
+} else if(input$fishery=="Sardine"){
+
+   Sardine %>%
+    filter(
+
+           date >= as.Date(input$date[1]),
+           date <= as.Date(input$date[2])) %>%
+    ggplot(aes(x = date, y = effort_catch
+               # , color = Users
+               )) +
+    geom_line(size = 1, alpha=0.8, col="#f7cb72") +
+    # geom_smooth( method = "gam", methods.arg = list(family = Gamma(log)), fill="#3700B3",color="#03DAC6"
+    #              )+
+    labs(x = "Date", y = "Fishing hours", title=paste0(input$fishery," fisheries from ", format(input$date[1], format="%Y"), " to ", format(input$date[2], format="%Y") )) +
+    theme_classic()+
+    theme(axis.text.y = element_text(size=18, colour ="#FFFFFF" ),
+          axis.text.x = element_text(size=17, colour ="#FFFFFF" ),
+          axis.title.y = element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          axis.title.x= element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          plot.title = element_text(size=22, face="bold", hjust=0.5, colour ="#FFFFFF" ),
+          plot.background = element_rect(fill="#121212"),
+          panel.background = element_rect(fill="#121212"),
+          axis.line = element_line(colour = "#FFFFFF"))
+
+} else{
+
+  Forecast %>%
+    filter(
+
+           date >= as.Date(input$date[1]),
+           date <= as.Date(input$date[2])) %>%
+    ggplot(aes(x = date, y = effort_catch
+               # , color = Users
+               )) +
+    geom_line(size = 1, alpha=0.8, col="#f7cb72") +
+    # geom_smooth( method = "gam", methods.arg = list(family = Gamma(log)), fill="#3700B3",color="#03DAC6"
+    #              )+
+    labs(x = "Date", y = "Fishing hours", title=paste0(input$fishery," from ", format(input$date[1], format="%Y"), " to ", format(input$date[2], format="%Y") )) +
+    theme_classic()+
+    theme(axis.text.y = element_text(size=18, colour ="#FFFFFF" ),
+          axis.text.x = element_text(size=17, colour ="#FFFFFF" ),
+          axis.title.y = element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          axis.title.x= element_text(size=20, face="bold", colour ="#FFFFFF" ),
+          plot.title = element_text(size=22, face="bold", hjust=0.5, colour ="#FFFFFF" ),
+          plot.background = element_rect(fill="#121212"),
+          panel.background = element_rect(fill="#121212"),
+          axis.line = element_line(colour = "#FFFFFF"))
+}
+
+
+})
+
+```
+
+
+
+Row
+-----------------------------------------------------------------------
+
+### Minimum hours predicted
+
+```{r}
+renderValueBox({
+
+  if(input$fishery =="Tuna"){
+
+      min <- round(min(Tuna$effort_catch),0)
+  valueBox(min,
+           icon = "ion-android-arrow-down",
+           color = "#198040")
+  } else if(input$fishery=="Shark"){
+          min <- round(min(Shark$effort_catch),3)
+  valueBox(min,
+           icon = "ion-android-arrow-down",
+           color = "#198040")
+  }else if(input$fishery=="Shrimp"){
+          min <- round(min(Shrimp$effort_catch),3)
+  valueBox(min,
+           icon = "ion-android-arrow-down",
+           color = "#198040")
+  }else if(input$fishery=="Sardine"){
+          min <- round(min(Sardine$effort_catch),3)
+  valueBox(min,
+           icon = "ion-android-arrow-down",
+           color = "#198040")
+  }else {
+          min <- min(Forecast$effort_catch)
+  valueBox(min,
+           icon = "ion-android-arrow-down",
+           color = "#198040")
+  }
+
+
+})
+```
+
+
+### Maximum hours predicted
+
+```{r}
+renderValueBox({
+
+  if(input$fishery =="Tuna"){
+
+      max <- round(max(Tuna$effort_catch),0)
+  valueBox(max,
+           icon = "ion-android-arrow-up",
+           color = "#801919")
+  }else if(input$fishery=="Shark"){
+          max <- round(max(Shark$effort_catch),3)
+  valueBox(max,
+           icon = "ion-android-arrow-up",
+           color = "#801919")
+  }else if(input$fishery=="Shrimp"){
+          max <- round(max(Shrimp$effort_catch),3)
+  valueBox(max,
+           icon = "ion-android-arrow-up",
+           color = "#801919")
+  }else if(input$fishery=="Sardine"){
+          max <- round(max(Sardine$effort_catch),3)
+  valueBox(max,
+           icon = "ion-android-arrow-up",
+           color = "#801919")
+
+
+   } else {
+          max <- max(Forecast$effort_catch)
+  valueBox(max,
+           icon = "ion-android-arrow-up",
+           color = "#801919")}
+
+})
+```
